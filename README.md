@@ -1,2 +1,2 @@
 # Phobicue-Jiong-View
-A desktop application that censors real time image straight from GPU, the sends the processed video to the user.
+A desktop application that duplicates an existing window and censor certain phobia-triggering objects while maintaining original functions.
