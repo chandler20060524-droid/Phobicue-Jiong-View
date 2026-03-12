@@ -1,15 +1,74 @@
+import sys
+import time
 import cv2
+import torch
 import numpy as np
 import win32gui, win32ui, win32con, win32api
-from pynput import mouse, keyboard
 from ctypes import windll
-import threading 
 from ultralytics import YOLO
+from PyQt6.QtWidgets import QWidget, QApplication, QVBoxLayout, QMainWindow
+from PyQt6.QtGui import QImage
+from PyQt6.QtCore import pyqtSlot, QThread, pyqtSignal, Qt
+from PyQt6.QtGui import QMouseEvent, QPainter
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 
-# Load image classification model
-model = YOLO("yolov8n.pt")
+_width = 0
+_height = 0
+
+model = YOLO("yolo26m.pt") 
+
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+else:   
+    device = torch.device("cpu")
+
+model.to(device)
+cv2.setNumThreads(0)
+
+def DetectAnimal(frame, conf_threshold = 0.25):
+    '''
+    Returns a list of bounding boxex on successfully detected animals.
+    '''
+    source = cv2.resize(frame, (1280, 1280))
+    with torch.no_grad():
+        results = model.predict(source=source, show=False, save=False, verbose=False)
+    detections = []
+
+    for result in results:
+        if result.boxes is None:
+            continue
+        box_list = result.boxes.xyxy.tolist()
+        cls_list = result.boxes.cls.int().tolist()
+        conf_list = result.boxes.conf.tolist()
+
+        for box, cls, conf in zip(box_list, cls_list, conf_list):
+            if cls in ANIMAL_CLASSES and conf >= conf_threshold:
+                x1, y1, x2, y2 = map(int, box)
+                x1 = int(x1 / 1280 * _width)
+                y1 = int(y1 / 1280 * _height)
+                x2 = int(x2 / 1280 * _width)
+                y2 = int(y2 / 1280 * _height)
+                if conf > 0.5:
+                    counter = 10
+                else:
+                    counter = 5
+                detections.append(Detections((x1, y1, x2, y2), counter))
+
+    return detections
+
+def RegionBlur(frame, box):
+    '''
+    Blurs region based on successful detections.
+    '''
+    x1, y1, x2, y2 = box
+    roi = frame[y1:y2, x1:x2]
+
+    if roi.size == 0:
+        return 
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (0,0,0), -1)
 
 ANIMAL_CLASSES = {
+    14,  # bird
     15,  # cat
     16,  # dog
     17,  # horse
@@ -19,222 +78,244 @@ ANIMAL_CLASSES = {
     21,  # bear
     22,  # zebra
     23,  # giraffe
-    14,  # bird
 }
 
-# Mouse and keyboard events tracking. 
-class InputState:
+class Detections:
+    def __init__(self, box, counter):
+        self.box = box
+        self.counter = counter
+
+class MainWindow(QMainWindow):
     def __init__(self):
-        self.lock = threading.Lock()
-        self.mouse_pos = (0, 0)
-        self.left_mouse_pressed = False
-        self.right_mouse_pressed = False
-        self.mouse_scrolled = False
-        self.running = True
+        super().__init__()
 
-state = InputState()
+        self.setWindowTitle("Phobicue")
+        self.move(0, 0)
 
-def on_move(x, y):
-    with state.lock:
-        state.mouse_pos = (x, y)
+        self.setMouseTracking(True)
 
-def on_click(x, y, button, pressed):
-    with state.lock:
-        if button == mouse.Button.left:
-            state.left_mouse_pressed = pressed
-        if button == mouse.Button.right:
-            state.right_mouse_pressed = pressed
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
-def on_key(key):
-    if key == keyboard.Key.esc:
-        state.running = False
-        return False
+        self.VBL = QVBoxLayout(central_widget)
+
+        self.video = GLVideoWidget()
+        self.VBL.addWidget(self.video)
+        
+        self.Worker = VideoWorker()
+
+        self.video.mousePressed.connect(self.Worker.MousePress)
+        self.video.mouseMoved.connect(self.Worker.MouseMove)
+        self.video.mouseReleased.connect(self.Worker.MouseRelease)
+        self.video.KeyPressed.connect(self.Worker.MouseScrolled)
+        self.video.EnterPressed.connect(self.Worker.EnterPressed)
+
+        self.Worker.ImageUpdate.connect(self.video.UpdateFrame)
+        self.Worker.start()
     
-def on_scroll(x, y, dx, dy):
-    with state.lock:
-        state.mouse_scrolled = dy
-    
-mouse.Listener(on_move=on_move, on_click=on_click, on_scroll=on_scroll).start()
-keyboard.Listener(on_press=on_key).start()
+        menu_bar = self.menuBar()
+        win = menu_bar.addMenu("&Phobicue")
+        quit = win.addAction("Quit")
+        quit.triggered.connect(self.close)
 
-# Window title to capture
-window_title = "Google Chrome"
+    def closeEvent(self, event):
+        self.Worker.stop()
+        event.accept()
 
-# Create cv2 window
-cv2.namedWindow("Phobicue", cv2.WINDOW_NORMAL)
+class GLVideoWidget(QOpenGLWidget):
+    mousePressed = pyqtSignal(float, float)
+    mouseMoved = pyqtSignal(float, float)
+    mouseReleased = pyqtSignal(float, float)
+    KeyPressed = pyqtSignal(int)
+    EnterPressed = pyqtSignal()
 
-# Get window information
-windll.user32.SetProcessDPIAware()
-hwnd = win32gui.FindWindow(None, window_title)
-left, top, right, bottom = win32gui.GetClientRect(hwnd)
-width = right - left
-height = bottom - top
+    def __init__(self):
+        super().__init__()
+        self.frame = None
+        self.width = 0
+        self.height = 0
 
-# Get window handle from target window
-hdc = win32gui.GetWindowDC(hwnd)
-mfcDC  = win32ui.CreateDCFromHandle(hdc)
-saveDC = mfcDC.CreateCompatibleDC()
+    @pyqtSlot(np.ndarray)
+    def UpdateFrame(self, frame):
+        self.frame = frame
+        self.update() 
 
-# Get bitmap as image input buffer
-saveBitMap = win32ui.CreateBitmap()
-saveBitMap.CreateCompatibleBitmap(mfcDC, width, height)
+    def paintGL(self):
+        if self.frame is None:
+            return
+        
+        h, w, ch = self.frame.shape
+        bytes_per_line = ch * w
 
-def main():
-    frame_count = 0
-    safety_counter = 30
-    previous_detections = []
-    while state.running:
-        try:   
-            saveDC.SelectObject(saveBitMap)
-            result = windll.user32.PrintWindow(hwnd, saveDC.GetSafeHdc(), 2)
+        frame = self.frame.copy()
+
+        img = QImage(
+            frame.data,
+            w, 
+            h, 
+            bytes_per_line,
+            QImage.Format.Format_RGB888
+        )
+
+        rect = self.rect()
+        self.width = rect.width()
+        self.height = rect.height()
+
+        painter = QPainter(self)
+        painter.drawImage(rect, img)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        pos = event.pos()
+        mouse_x = pos.x()
+        mouse_y = pos.y()
+        self.mousePressed.emit(mouse_x / self.width, mouse_y / self.height)
+        event.accept()
+
+    def mouseMoveEvent(self, event: QMouseEvent):
+        pos = event.pos()
+        mouse_x = pos.x()
+        mouse_y = pos.y()
+        self.mouseMoved.emit(mouse_x / self.width, mouse_y / self.height)
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        pos = event.pos()
+        mouse_x = pos.x()
+        mouse_y = pos.y()
+        self.mouseReleased.emit(mouse_x / self.width, mouse_y / self.height)
+        event.accept()
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == Qt.Key.Key_Up:
+            self.KeyPressed.emit(1)
+        elif key == Qt.Key.Key_Down:
+            self.KeyPressed.emit(-1)
+        elif key == Qt.Key.Key_Enter:
+            self.EnterPressed.emit()
+        event.accept()
+
+class VideoWorker(QThread):
+    ImageUpdate = pyqtSignal(np.ndarray)
+
+    def __init__(self):
+        global _width, _height
+        super().__init__()
+        self.ThreadActive = True
+        self.mouse_down = False
+        self.force_detect = False
+
+        # Window title to capture
+        self.window_title = "Chrome"
+
+        # Get window information
+        self.hwnd = win32gui.FindWindow(None, self.window_title)
+        left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
+        _width = right - left
+        _height = bottom - top
+
+        # Get window handle from target window
+        self.hdc = win32gui.GetWindowDC(self.hwnd)
+        self.mfcDC  = win32ui.CreateDCFromHandle(self.hdc)
+        self.saveDC = self.mfcDC.CreateCompatibleDC()
+
+        # Get bitmap as image input buffer
+        self.saveBitMap = win32ui.CreateBitmap()
+        self.saveBitMap.CreateCompatibleBitmap(self.mfcDC, _width, _height)
+
+    def run(self):
+        frame_count = 0
+        detections = []
+        while self.ThreadActive:
+            time.sleep(0.01)
+
+            left, top, right, bottom = win32gui.GetClientRect(self.hwnd)
+            _width = right - left
+            _height = bottom - top
+            self.saveDC.SelectObject(self.saveBitMap)
+            result = windll.user32.PrintWindow(self.hwnd, self.saveDC.GetSafeHdc(), 2)
+
             if result != 1:
                 continue
 
-            bmpstr = saveBitMap.GetBitmapBits(True)
+            bmpstr = self.saveBitMap.GetBitmapBits(True)
+            cv_frame = np.frombuffer(bmpstr, dtype=np.uint8)
 
-            img = np.frombuffer(bmpstr, dtype=np.uint8)
-            img = img.reshape((height, width, 4))
-            cv_frame = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            array = cv_frame.reshape(_height, _width, 4).copy()
+            array = np.ascontiguousarray(array[:, :, :3][:, :, ::-1])
 
             # reuse detection every 3 frames
-            if frame_count % 3 == 0:
-                detections = DetectAnimal(cv_frame, 0.2)
+            if self.force_detect or frame_count % 1 == 0:
+                detections.extend(DetectAnimal(array))
+                self.force_detect = False
 
-            # previous detection last at least 30 frames to ensure 
-            # no flickerings
-            if len(detections) != 0:
-                previous_detections = detections.copy()
-                safety_counter = 30
+            for detect in detections:
+                RegionBlur(array, detect.box)
+                detect.counter -= 1
 
-            for x1, y1, x2, y2, conf in detections:
-                RegionBlur(cv_frame, (x1, y1, x2, y2))
+                if detect.counter == 0:
+                    detections.remove(detect)
 
-            if safety_counter > 0 and previous_detections:
-                for x1, y1, x2, y2, conf in previous_detections:
-                    RegionBlur(cv_frame, (x1, y1, x2, y2))
-
-                safety_counter -= 1
-
-            win_x, win_y, win_width, win_height = cv2.getWindowImageRect("Phobicue")
-
-            with state.lock:
-                abs_x, abs_y = state.mouse_pos
-                left_pressed = state.left_mouse_pressed
-                right_pressed = state.right_mouse_pressed
-                # scrolled = state.mouse_scrolled
-
-            x = int((abs_x - win_x) / win_width * width)
-            y = int((abs_y - win_y) / win_height * height)
-
-            x -= 7
-            y -= 200
-
-            if left_pressed:
-                click(x, y, 0)
-                win32gui.SetForegroundWindow(hwnd)
-            if right_pressed:
-                click(x, y, 1)
-
-            # if scrolled:
-                # scroll(x, y, scrolled * 120)
-
-            cv2.imshow("Phobicue", cv_frame)
+            self.ImageUpdate.emit(array)
 
             frame_count += 1
 
-            if cv2.waitKey(25) & 0xFF == 27:
-                break
+        # clean up
+        win32gui.DeleteObject(self.saveBitMap.GetHandle())
+        self.saveDC.DeleteDC()
+        self.mfcDC.DeleteDC()
+        win32gui.ReleaseDC(self.hwnd, self.hdc)
 
-        except Exception as e:
-            print("Error: ", e)
-            break
-    
-    win32gui.DeleteObject(saveBitMap.GetHandle())
-    saveDC.DeleteDC()
-    mfcDC.DeleteDC()
-    win32gui.ReleaseDC(hwnd, hdc)
-    cv2.destroyAllWindows()
+    def stop(self):
+        self.ThreadActive = False
+        self.wait()
+        self.quit()
 
-def click(x, y, input):
-    try:
+    @pyqtSlot(float, float)
+    def MousePress(self, x, y):
+        win32gui.SetForegroundWindow(self.hwnd)
+        self.force_detect = True
+        """Send LMB down at x, y"""
+        x = int(x * _width)
+        y = int(y * _height)
         lParam = win32api.MAKELONG(x, y)
+        win32gui.SendMessage(self.hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+        self.mouse_down = True
 
-        hWnd1 = win32gui.FindWindowEx(hwnd, None, None, None)
+    @pyqtSlot(float, float)
+    def MouseMove(self, x, y):
+        """Send mouse move; only moves if pressed"""
+        if self.mouse_down:
+            x = int(x * _width)
+            y = int(y * _height)
+            lParam = win32api.MAKELONG(x, y)
+            win32gui.SendMessage(self.hwnd, win32con.WM_MOUSEMOVE, win32con.MK_LBUTTON, lParam)
 
-        match input:
-            case 0:
-                win32gui.SendMessage(hWnd1, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
-                win32gui.SendMessage(hWnd1, win32con.WM_LBUTTONUP, None, lParam)
-            case 1:
-                win32gui.SendMessage(hWnd1, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lParam)
-                win32gui.SendMessage(hWnd1, win32con.WM_RBUTTONUP, None, lParam)
-
-    except Exception as e:
-        print(f"Click failed: {e}")
-
-def enum_child_windows(hwnd):
-    '''
-    Enumerate through window handles to find a child window that acceots
-    mouse wheel scroll messsage (currently not implemented).
-    '''
-    children = []
-    def callback(child, param):
-        children.append(child)
-        return True
-    win32gui.EnumChildWindows(hwnd, callback, None)
-    return children
-
-def scroll(x, y, delta):
-    try:
-        children = enum_child_windows(hwnd)
-        target_hwnd = children[-1]
-
+    @pyqtSlot(float, float)
+    def MouseRelease(self, x, y):
+        """Send LMB up"""
+        x = int(x * _width)
+        y = int(y * _height)
         lParam = win32api.MAKELONG(x, y)
-        wParam = win32api.MAKELONG(0, delta)
+        win32gui.SendMessage(self.hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+        self.mouse_down = False
 
-        win32gui.PostMessage(target_hwnd, win32con.WM_MOUSEWHEEL, wParam, lParam)
+    @pyqtSlot(int)
+    def MouseScrolled(self, delta_y):
+        self.force_detect = True
+        x = int(_width / 2)
+        y = int(_height / 2)
+        lParam = win32api.MAKELONG(x, y)
+        wParam = win32api.MAKELONG(0, delta_y * 120)
+        win32gui.PostMessage(self.hwnd, win32con.WM_MOUSEWHEEL, wParam, lParam)
 
-    except Exception as e:
-        print(f"Scroll failed: {e}")
-
-def DetectAnimal(frame, conf_threshold = 0.4):
-    '''
-    Returns a list of bounding boxex on successfully detected animals.
-    '''
-    # resized = cv2.resize(frame, (640, 640)) 
-    # faster detection since YOLO is trained on 640 x 640 images
-    results = model(frame, verbose=False)
-    detections = []
-
-    for r in results:
-        for box in r.boxes:
-            cls = int(box.cls[0])
-            conf = float(box.conf[0])
-
-            if cls in ANIMAL_CLASSES and conf >= conf_threshold:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                # rescale detected position based on frame size
-                # x1 = int(x1 / 640 * width)
-                # y1 = int(y1 / 640 * height)
-                # x2 = int(x2 / 640 * width)
-                # y2 = int(y2 / 640 * height)
-                detections.append((x1, y1, x2, y2, conf))
-    
-    return detections
-
-def RegionBlur(frame, box):
-    '''
-    Blurs region based on successful detections.
-    '''
-    x1, x2, y1, y2 = box
-    roi = frame[y1:y2, x1:x2]
-
-    if roi.size == 0:
-        return 
-    
-    blurred = cv2.GaussianBlur(roi, (51, 51), 0)
-    frame[y1:y2, x1:x2] = blurred
-
+    @pyqtSlot()
+    def EnterPressed(self):
+        self.force_detect = True
 
 if __name__ == "__main__":
-    main()
+    App = QApplication(sys.argv)
+    win = MainWindow()
+    win.resize(1240, 768)
+    win.show()
+    sys.exit(App.exec()) # exit as i click the "x" button 
