@@ -14,7 +14,7 @@ from a window, automatically applies censorship to frames and transfers them to 
 
 ## How It Works
 
-The application captures the bitmap image on the original screen, converts into numpy array, processes it
+The application captures the bitmap image on the original window, converts into numpy array, processes it
 by detecting desired objects using a YOLO object detection model and censoring the desired regions, 
 before transferring it onto an interactive PyQt6 window for viewing & interactions. 
 
