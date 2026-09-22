@@ -53,12 +53,12 @@ On running the Phobicue.py, the application will first launch a pre-launcher win
 ### Window Name
 
 For example, to use it on Google Chrome: 
-    - Open Google Chrome and name it "Chrome".
-    - Switch to window mode from full screen if applicable (do not minimize).
-    - Adjust the window to a desirable size.
-    - Drag the window down until the content area that potentially contains items you want to censor
-    submerges under your screen (so you don't see it).
-    - Enter "Chrome" in the first text field.
+- Open Google Chrome and name it "Chrome".
+- Switch to window mode from full screen if applicable (do not minimize).
+- Adjust the window to a desirable size.
+- Drag the window down until the content area that potentially contains items you want to censor
+submerges under your screen (so you don't see it).
+- Enter "Chrome" in the first text field.
 
 ### YOLO Model
 
@@ -91,11 +91,11 @@ When clicking on the text field of the original window, you can type on your key
 ### Mask Options
 
 The mask option tab allows you to decide what goes on the censored area. 
-    - "Disable" will disable the censorship.
-    - "Black" will cover the detected region with black rectangles.
-    - "Blur" will apply a blurring effect on the detected region.
-    - "Custom Image" will check the "custom_image" folder, and cover the detected region with random images
-    from the folder if the image file is applicable.
+- "Disable" will disable the censorship.
+- "Black" will cover the detected region with black rectangles.
+- "Blur" will apply a blurring effect on the detected region.
+- "Custom Image" will check the "custom_image" folder, and cover the detected region with random images
+from the folder if the image file is applicable.
 
 Note: custom images may be shown with wrong colors due to color channel order mismatches. 
 
