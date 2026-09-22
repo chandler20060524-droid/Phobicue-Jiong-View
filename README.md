@@ -1,9 +1,8 @@
 # Phobicue-Jiong-View Visual Censor
 
-A Windows desktop application that detects objects using object detection model
-in video and automatically obscures them in real time on another window.
+A Windows desktop application that detects objects using object detection model in real time
+from a window, automatically applies censorship to frames and transfers them to another window.
 
-### Description
 ## Features
 
 - Real-time object detection
@@ -28,18 +27,18 @@ before transferring it onto an interactive PyQt6 window for viewing & interactio
 - NumPy
 - Windows APIs
 
-### Setup
-## Requirements
+## Setup
+### Requirements
 
  - Windows 10/11
  - Python 3.x
- - Conda or pip
+ - pip
 
-## Recommendation
+### Recommendation
 
  - A compatible GPU is recommended for real-time performance, but the application can also run on CPU.
 
-## Installation
+### Installation
 
 Clone the repository and install the required Python packages:
 
@@ -47,11 +46,11 @@ git clone [<repository-url>](https://github.com/chandler20060524-droid/Phobicue-
 cd Phobicue-Jiong-View
 pip install -r requirements.txt
 
-### Pre-Launching
+## Pre-Launching
 
 On running the Phobicue.py, the application will first launch a pre-launcher window which asks for the desired window name and the YOLO model file name. 
 
-## Window Name
+### Window Name
 
     For example, to use it on Google Chrome: 
      - Open Google Chrome and name it "Chrome".
@@ -61,7 +60,7 @@ On running the Phobicue.py, the application will first launch a pre-launcher win
        submerges under your screen (so you don't see it).
      - Enter "Chrome" in the first text field.
 
-## YOLO Model
+### YOLO Model
 
     The application detects objects based on the model used. For example, entering "yolo26m.pt" in the 
     second text field will make the application use the default Ultralytics yolo26m.pt model for detection.
@@ -70,58 +69,61 @@ On running the Phobicue.py, the application will first launch a pre-launcher win
     then place the ".pt" file in the root directory before running the application. Then enter the name 
     of the model file. 
 
-    On the first launch, the default YOLO model will be downloaded automatically by the Ultralytics package given that the model exists and is not already present locally. 
+    To test the application, on the first launch, the default YOLO model will be downloaded automatically 
+    by the Ultralytics package given that the entered model exists and is not already present locally. 
+
+    Note: the application will censor every class detected by the model as long as the detection 
+    confidence exceeds the thresholds. 
 
 After entering the required text field, click continue. If no error presents, the pre-launcher will hide 
 it self and launch the main application window. 
 
-### Main Application
+## Main Application
 
 The main window is a one-to-one replication of the window you want to censor, while your actual, original 
 window stays below your viewable screen. The menu bar allows you to customize censoring features.
 
-## Interaction
+### Interaction
 
-The main window can be interacted with the cursor, which allows you to perform click and drag actions.
-When clicking on the text field of the original window, you can type on your keyboard to enter texts.
+    The main window can be interacted with the cursor, which allows you to perform click and drag actions.
+    When clicking on the text field of the original window, you can type on your keyboard to enter texts.
 
-## Mask Options
+### Mask Options
 
-The mask option tab allows you to decide what goes on the censored area. 
- - "Disable" will disable the censorship.
- - "Black" will cover the detected region with black rectangles.
- - "Blur" will apply a blurring effect on the detected region.
- - "Custom Image" will check the "custom_image" folder, and cover the detected region with random images
-   from the folder if the image file is applicable.
+    The mask option tab allows you to decide what goes on the censored area. 
+     - "Disable" will disable the censorship.
+     - "Black" will cover the detected region with black rectangles.
+     - "Blur" will apply a blurring effect on the detected region.
+     - "Custom Image" will check the "custom_image" folder, and cover the detected region with random images
+       from the folder if the image file is applicable.
 
-Note: custom images may be shown with wrong colors due to color channel order mismatches. 
+    Note: custom images may be shown with wrong colors due to color channel order mismatches. 
 
-## Detection Strictness:
+### Detection Strictness:
 
-The detection strictness tab allows you to decide how strict should the censorships should be.
-- "Loose": the app will report a lot of detections, which may include incorrectly detected objects.
-- "Normal": the recommended option. The app will report a normal amount of detections.
-- "Strict": the app will report fewer detections with greater accuracy.
-- "Very Strict": the app will report detections only if it is very confident, which may result in 
-  ineffective censorships. 
+    The detection strictness tab allows you to decide how strict should the censorships should be.
+    - "Loose": the app will report a lot of detections, which may include incorrectly detected objects.
+    - "Normal": the recommended option. The app will report a normal amount of detections.
+    - "Strict": the app will report fewer detections with greater accuracy.
+    - "Very Strict": the app will report detections only if it is very confident, which may result in 
+      ineffective censorships. 
 
-## Detection Frequency:
+### Detection Frequency:
 
-The detection frequency tab allows you to decide how many frames should be between each two detections. 
+    The detection frequency tab allows you to decide how many frames should be between each two detections. 
 
-The recommended option is "Every Frame", which guarantees that every frame will be examined by the model. 
-However, too frequent detection may impose performance issues. Therefore, you can choose that the application
-detects less frequently, though it may also results in ineffective censorships.
+    The recommended option is "Every Frame", which guarantees that every frame will be examined by the model. 
+    However, too frequent detection may impose performance issues. Therefore, you can choose that the application detects less frequently, though it may also results in ineffective censorships.
 
-Note: with force detection mechanism, the application will be forced to do a detection on a frame whenever
-your mouse interacts with the window, regardless your choice of frequency. 
+    Note: with force detection mechanism, the application will be forced to do a detection on a frame 
+    whenever your mouse interacts with the window, regardless your choice of frequency. 
 
-## Exiting the Application
+### Exiting the Application
 
-You can exit the application by clicking "Quit" option in the "Phobicue" menu tab; or alternatively, click
-the x button on the window. 
+    You can exit the application by clicking "Quit" option in the "Phobicue" menu tab; or alternatively, 
+    click the x button on the window. 
 
-### GPU Acceleration
+## GPU Acceleration
 
 GPU acceleration is optional. The application can run using either CPU or CUDA-enabled GPU inference.
 
@@ -135,15 +137,15 @@ After installation, you can verify CUDA availability with:
 
 If this returns True, the application can use the NVIDIA GPU for inference.
 
-### Error Handling
+## Error Handling
 
 The application handles error by showing error message in a PyQt QMessageBox before exiting safely. 
 
-### Warnings
+## Warnings
 
 The application will show warnings after certain user actions. They are not errors. 
 
-### Additonal Note
+## Additonal Note
 
 It is recommended to adjust the target window to a desired size before launching the main application, as
 changing original window size when the application is running is prone to cause an error. 
