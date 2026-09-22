@@ -42,9 +42,9 @@ before transferring it onto an interactive PyQt6 window for viewing & interactio
 
 Clone the repository and install the required Python packages:
 
-git clone [<repository-url>](https://github.com/chandler20060524-droid/Phobicue-Jiong-View.git)
-cd Phobicue-Jiong-View
-pip install -r requirements.txt
+    git clone https://github.com/chandler20060524-droid/Phobicue-Jiong-View.git
+    cd Phobicue-Jiong-View
+    pip install -r requirements.txt
 
 ## Pre-Launching
 
@@ -131,9 +131,9 @@ For NVIDIA GPU users, install a CUDA-enabled version of PyTorch rather than the 
 
 After installation, you can verify CUDA availability with:
 
-<import torch>
-
-<print(torch.cuda.is_available())>
+    import torch
+    
+    print(torch.cuda.is_available())
 
 If this returns True, the application can use the NVIDIA GPU for inference.
 
